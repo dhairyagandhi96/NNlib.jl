@@ -1,4 +1,14 @@
-export pad_constant, pad_repeat
+export pad_constant, pad_repeat, pad_reflect, pad_zeros
+
+
+"""
+    pad_zeros(x, pad::Tuple, val=0; [dims])
+
+Pad the array `x` with zeros.
+Equivalent to [`pad_constant`](@ref) with the constant equal to 0. 
+"""
+pad_zeros(x::AbstractArray, pad::NTuple{N,Int}; dims=1:N÷2) where N =
+  pad_constant(x, pad; dims=dims)
 
 """
     pad_constant(x, pad::Tuple, val=0; [dims])
@@ -10,6 +20,8 @@ of some length `2n` that specifies the left and right padding size
 for each of the dimensions in `dims`.
 
 If `dims` is not given, it defaults to the first `n` dimensions. 
+
+See also [`pad_reflect`](@ref) and [`pad_repeat`](@ref).
 
 ```jldoctest
 julia> pad_constant(reshape(1:4, 2, 2), (1, 2, 3, 4), 8)
@@ -60,7 +72,7 @@ function rrule(::typeof(pad_constant), x::AbstractArray, pad::NTuple{N,Int}, val
   szx = size(x)
   y = pad_constant(x, pad, val; dims=dims)
   function pad_constant_pullback(Δ)
-    outsize, center = compute_pad_outsize_and_center(szx, pad, dims)
+    outsi where N =ze, center = compute_pad_outsize_and_center(szx, pad, dims)
     (NO_FIELDS, 
     @thunk(Δ[center...]), 
     DoesNotExist(),
@@ -69,7 +81,6 @@ function rrule(::typeof(pad_constant), x::AbstractArray, pad::NTuple{N,Int}, val
   end
   return y, pad_constant_pullback
 end
-
 
 """
   pad_repeat(x, pad::Tuple; [dims])
@@ -81,6 +92,8 @@ of some length `2n` that specifies the left and right padding size
 for each of the dimensions in `dims`.
 
 If `dims` is not given, it defaults to the first `n` dimensions.
+
+See also [`pad_reflect`](@ref) and [`pad_constant`](@ref).
 
 ```jldoctest
 julia> pad_repeat(reshape(1:9, 3, 3), (1,2,3,4))
@@ -103,22 +116,65 @@ function pad_repeat(x::AbstractArray, pad::NTuple{N,Int};
   return x
 end
 
-# function pad_repeat(x::A, pad::NTuple{2,Int}; 
-#                     dims::Int=1) where  A<:AbstractArray{F,N} where {F,N}
 function pad_repeat(x::AbstractArray{F,N}, pad::NTuple{2,Int}; 
                     dims::Int=1) where {F,N}
-    lpad, rpad = pad
-  
+  lpad, rpad = pad
+
   xlborder = selectdim(x, dims, 1:1)
   nrepl = ntuple(i -> i==dims ? lpad : 1, N)
-  # xl = repeat(xlborder, nrepl...) # not supported by Zygote
   xl = repeat(xlborder, outer=nrepl)
 
   n = size(x, dims)
   xrborder = selectdim(x, dims, n:n)
   nrepr = ntuple(i -> i==dims ? rpad : 1, N)
-  # xr = repeat(xrborder, nrepr...) # not supported by Zygote
   xr = repeat(xrborder, outer=nrepr)
 
+  return cat(xl, x, xr, dims=dims)
+end
+
+"""
+  pad_reflect(x, pad::Tuple; [dims])
+
+Pad the array `x` reflecting its values across the border.
+
+`pad` is a tuple of integers `(l1, r1, ..., ln, rn)`
+of some length `2n` that specifies the left and right padding size
+for each of the dimensions in `dims`.
+
+If `dims` is not given, it defaults to the first `n` dimensions.
+
+See also [`pad_repeat`](@ref) and [`pad_constant`](@ref).
+
+```jldoctest
+julia> pad_reflect(reshape(1:9, 3, 3), (1,2,1,2))
+6×6 Matrix{Int64}:
+ 5  2  5  8  5  2
+ 4  1  4  7  4  1
+ 5  2  5  8  5  2
+ 6  3  6  9  6  3
+ 5  2  5  8  5  2
+ 4  1  4  7  4  1
+```
+"""
+function pad_reflect(x::AbstractArray, pad::NTuple{N,Int}; 
+                    dims=1:N÷2) where N
+  length(dims) == N÷2 ||
+    throw(ArgumentError("The number of dims should be equal to the number of padding dimensions"))
+  for (i, d) in enumerate(dims)
+    x = pad_reflect(x, (pad[2i-1], pad[2i]); dims=d)
+  end  
+  return x
+end
+
+function pad_reflect(x::AbstractArray{F,N}, pad::NTuple{2,Int}; 
+                    dims::Int=1) where {F,N}
+  lpad, rpad = pad
+  
+  n = size(x, dims)
+  xl = selectdim(x, dims, lpad+1:-1:2)
+  xr = selectdim(x, dims, n-1:-1:n-rpad)
+  # Alternative selection, not sure which is faster...
+  # xl = reverse(selectdim(x, dims, 2:lpad+1), dims)
+  # xr = reverse(selectdim(x, dims, n-rpad:n-1), dims)
   return cat(xl, x, xr, dims=dims)
 end

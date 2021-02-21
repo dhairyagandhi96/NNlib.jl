@@ -45,4 +45,20 @@ end
   gradtest(x -> pad_repeat(x, (2,2,2,2)), rand(2,2,2))
 end
 
+@test "padding reflect" begin
+  y = pad_reflect(reshape(1:9, 3, 3), (2,2), dims=2)
+  @test y ==  [ 7  4  1  4  7  4  1
+                8  5  2  5  8  5  2
+                9  6  3  6  9  6  3]
 
+  y = pad_reflect(reshape(1:9, 3, 3), (2,2,2,2))
+  @test y ==   [9  6  3  6  9  6  3
+                8  5  2  5  8  5  2
+                7  4  1  4  7  4  1
+                8  5  2  5  8  5  2
+                9  6  3  6  9  6  3
+                8  5  2  5  8  5  2
+                7  4  1  4  7  4  1]
+
+  gradtest(x -> pad_repeat(x, (2,2,2,2)), rand(2,2,2))
+end
