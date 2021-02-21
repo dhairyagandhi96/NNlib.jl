@@ -72,7 +72,7 @@ function rrule(::typeof(pad_constant), x::AbstractArray, pad::NTuple{N,Int}, val
   szx = size(x)
   y = pad_constant(x, pad, val; dims=dims)
   function pad_constant_pullback(Δ)
-    outsi where N =ze, center = compute_pad_outsize_and_center(szx, pad, dims)
+    outsize, center = compute_pad_outsize_and_center(szx, pad, dims)
     (NO_FIELDS, 
     @thunk(Δ[center...]), 
     DoesNotExist(),
@@ -81,6 +81,7 @@ function rrule(::typeof(pad_constant), x::AbstractArray, pad::NTuple{N,Int}, val
   end
   return y, pad_constant_pullback
 end
+
 
 """
   pad_repeat(x, pad::Tuple; [dims])
@@ -131,6 +132,7 @@ function pad_repeat(x::AbstractArray{F,N}, pad::NTuple{2,Int};
 
   return cat(xl, x, xr, dims=dims)
 end
+
 
 """
   pad_reflect(x, pad::Tuple; [dims])

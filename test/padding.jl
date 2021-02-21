@@ -7,11 +7,15 @@
   y[4:5, 5:6, :] .= 0
   @test all(y .== 0)
 
+  @test pad_constant(x, (3, 2, 4, 5)) ≈ pad_zeros(x, (3, 2, 4, 5))
+  
   y = @inferred pad_constant(x, (3, 2, 4, 5), 1.2, dims=(1,3))
   @test size(y) == (7, 2, 11)
   @test y[4:5, :, 5:6] ≈ x
   y[4:5, :, 5:6] .= 1.2
   @test all(y .== 1.2)
+
+  @test pad_zeros
 
   gradtest(x -> pad_constant(x, (2,2,2,2)), rand(2,2,2))
 end
