@@ -1,4 +1,4 @@
-export pad_constant
+export pad_constant, pad_repeat
 
 """
     pad_constant(x, pad::Tuple, val=0; [dims])
@@ -6,28 +6,119 @@ export pad_constant
 Pad the array `x` with the constant value `val`.
 
 `pad` is a tuple of integers `(l1, r1, ..., ln, rn)`
-of some length `2n` specifying the left and right padding size
-in each of the dimensions in `dims`.
+of some length `2n` that specifies the left and right padding size
+for each of the dimensions in `dims`.
 
-If `dims` is not given, it defaults to the first `n` dimensions.  
+If `dims` is not given, it defaults to the first `n` dimensions. 
+
+```jldoctest
+julia> pad_constant(reshape(1:4, 2, 2), (1, 2, 3, 4), 8)
+5×9 Matrix{Int64}:
+ 8  8  8  8  8  8  8  8  8
+ 8  8  8  1  3  8  8  8  8
+ 8  8  8  2  4  8  8  8  8
+ 8  8  8  8  8  8  8  8  8
+ 8  8  8  8  8  8  8  8  8
+````
 """
 function pad_constant(x::AbstractArray, pad::NTuple{N,Int}, val=0; 
                     dims=1:N÷2) where N
   length(dims) == N÷2 ||
     throw(ArgumentError("The number of dims should be equal to the number of padding dimensions"))
+  outsize, center = compute_pad_outsize_and_center(size(x), pad, dims)
+  y = fill!(similar(x, eltype(x), outsize), val)
+  y[center...] .= x
+  return y
+end
+
+function compute_pad_outsize_and_center(sz::NTuple{N,Int}, pad, dims) where {N}
+  leftpad, rightpad = pad[1:2:end], pad[2:2:end]
+  
+  outsize = ntuple(N) do i
+              k = findfirst(==(i), dims)
+              if k === nothing
+                return sz[i]
+              else
+                return sz[i] + leftpad[k] + rightpad[k]
+              end
+            end::NTuple{N,Int}
+  
+  leftcorner = ones(Int, N)
+  rightcorner = collect(outsize)
   for (i, d) in enumerate(dims)
-    x = pad_constant(x, (pad[2i-1], pad[2i]), val; dims=d)
+    leftcorner[d] += leftpad[i]
+    rightcorner[d] -= rightpad[i]
+  end
+  center = ntuple(N) do i
+            leftcorner[i]:rightcorner[i]
+          end 
+  return outsize, center
+end
+
+function rrule(::typeof(pad_constant), x::AbstractArray, pad::NTuple{N,Int}, val=0; 
+      dims=1:N÷2) where N
+  szx = size(x)
+  y = pad_constant(x, pad, val; dims=dims)
+  function pad_constant_pullback(Δ)
+    outsize, center = compute_pad_outsize_and_center(szx, pad, dims)
+    (NO_FIELDS, 
+    @thunk(Δ[center...]), 
+    DoesNotExist(),
+    @thunk(sum(Δ) - sum(Δ[center...])), 
+    )
+  end
+  return y, pad_constant_pullback
+end
+
+
+"""
+  pad_repeat(x, pad::Tuple; [dims])
+
+Pad the array `x` repeating the values on the border.
+
+`pad` is a tuple of integers `(l1, r1, ..., ln, rn)`
+of some length `2n` that specifies the left and right padding size
+for each of the dimensions in `dims`.
+
+If `dims` is not given, it defaults to the first `n` dimensions.
+
+```jldoctest
+julia> pad_repeat(reshape(1:9, 3, 3), (1,2,3,4))
+6×10 Matrix{Int64}:
+ 1  1  1  1  4  7  7  7  7  7
+ 1  1  1  1  4  7  7  7  7  7
+ 2  2  2  2  5  8  8  8  8  8
+ 3  3  3  3  6  9  9  9  9  9
+ 3  3  3  3  6  9  9  9  9  9
+ 3  3  3  3  6  9  9  9  9  9
+```
+"""
+function pad_repeat(x::AbstractArray, pad::NTuple{N,Int}; 
+                    dims=1:N÷2) where N
+  length(dims) == N÷2 ||
+    throw(ArgumentError("The number of dims should be equal to the number of padding dimensions"))
+  for (i, d) in enumerate(dims)
+    x = pad_repeat(x, (pad[2i-1], pad[2i]); dims=d)
   end  
   return x
 end
 
-function pad_constant(x::AbstractArray, pad::NTuple{2,Int}, val=0; 
-                    dims::Int=1)
-  sz = size(x)
-  l, r = pad
-  szl = (sz[1:dims-1]..., l, sz[dims+1:end]...)
-  szr = (sz[1:dims-1]..., r, sz[dims+1:end]...) 
-  xl = fill!(similar(x, eltype(x), szl), val)
-  xr = fill!(similar(x, eltype(x), szr), val)
-  return cat(xl, x, xr, dims=dims) 
+# function pad_repeat(x::A, pad::NTuple{2,Int}; 
+#                     dims::Int=1) where  A<:AbstractArray{F,N} where {F,N}
+function pad_repeat(x::AbstractArray{F,N}, pad::NTuple{2,Int}; 
+                    dims::Int=1) where {F,N}
+    lpad, rpad = pad
+  
+  xlborder = selectdim(x, dims, 1:1)
+  nrepl = ntuple(i -> i==dims ? lpad : 1, N)
+  # xl = repeat(xlborder, nrepl...) # not supported by Zygote
+  xl = repeat(xlborder, outer=nrepl)
+
+  n = size(x, dims)
+  xrborder = selectdim(x, dims, n:n)
+  nrepr = ntuple(i -> i==dims ? rpad : 1, N)
+  # xr = repeat(xrborder, nrepr...) # not supported by Zygote
+  xr = repeat(xrborder, outer=nrepr)
+
+  return cat(xl, x, xr, dims=dims)
 end

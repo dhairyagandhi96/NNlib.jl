@@ -56,7 +56,7 @@ function batched_mul(A::AbstractArray{T1, 3}, B::AbstractArray{T2, 3}) where {T1
     _batched_mul(storage_typejoin(A, B), A, B)
 end
 
-function ChainRulesCore.rrule(
+function rrule(
     ::typeof(batched_mul),
     A::AbstractArray{S,3},
     B::AbstractArray{T,3},
