@@ -13,7 +13,7 @@ end
 input_size(c::DenseConvDims) = c.I
 kernel_size(c::DenseConvDims{N,K,C_in,C_out}) where {N,K,C_in,C_out} = K
 channels_in(c::DenseConvDims{N,K,C_in,C_out}) where {N,K,C_in,C_out} = C_in::Int
-channels_out(c::DenseConvDims{N,K,C_in,C_out,G}) where {N,K,C_in,C_out,G} = C_out::Int
+channels_out(c::DenseConvDims{N,K,C_in,C_out,G}) where {N,K,C_in,C_out,G} = (C_out * G)::Int
 groupcount(c::DenseConvDims{N,K,C_in,C_out,G}) where {N,K,C_in,C_out,G} = G::Int
 
 # Convenience wrapper to create DenseConvDims objects
@@ -24,16 +24,16 @@ function DenseConvDims(x_size::NTuple{M}, w_size::NTuple{M};
     stride, padding, dilation = check_spdf(x_size, w_size, stride, padding, dilation)
 
     # Ensure channels are equal
-    if x_size[end-1] != w_size[end-1] * groups
-        xs = x_size[end-1]
-        ws = w_size[end-1]
-        throw(DimensionMismatch("Input channels must match! ($xs vs. $ws)"))
-    end
+    # if x_size[end-1] != w_size[end-1]
+    #     xs = x_size[end-1]
+    #     ws = w_size[end-1]
+    #     throw(DimensionMismatch("Input channels must match! ($xs vs. $ws)"))
+    # end
 
     # Ensure groups are valid
-    if x_size[end-1] % w_size[end-1] != 0 || w_size[end] % groups != 0
-        throw(DimensionMismatch("Group count should be divisble by input and output channels ($groups vs. $(w_size[end-1:end]))"))
-    end
+    # if w_size[end-1] % x_size[end-1] != 0 || w_size[end] % groups != 0
+    #     throw(DimensionMismatch("Group count should be divisble by input and output channels ($groups vs. $(w_size[end-1:end]))"))
+    # end
    
     # The type parameters are what 
     return DenseConvDims{
@@ -69,11 +69,14 @@ function DenseConvDims(c::ConvDims; N=spatial_dims(c), I=input_size(c), K=kernel
 end
 
 function check_dims(x::NTuple{M}, w::NTuple{M}, y::NTuple{M}, cdims::DenseConvDims) where {M}
+    # @show groupcount(cdims), channels_out(cdims)
+    # @show x, w, y
     # First, check that channel counts are all correct:
     @assert x[M-1] * groupcount(cdims) == channels_in(cdims) DimensionMismatch("Data input channel count ($(x[M-1]) vs. $(channels_in(cdims)))")
-    @assert y[M-1] == channels_out(cdims) ÷ groupcount(cdims)  DimensionMismatch("Data output channel count ($(y[M-1]) vs. $(channels_out(cdims)))")
+    @assert y[M-1] == channels_out(cdims) ÷ groupcount(cdims) ÷ groupcount(cdims) DimensionMismatch("Data output channel count ($(y[M-1]) vs. $(channels_out(cdims)))")
+    # @show x, w, y
     @assert w[M-1] * groupcount(cdims) == channels_in(cdims) DimensionMismatch("Kernel input channel count ($(w[M-1]) vs. $(channels_in(cdims)))")
-    @assert w[M] * groupcount(cdims) == channels_out(cdims) DimensionMismatch("Kernel output channel count ($(w[M]) vs. $(channels_out(cdims)))")
+    @assert w[M] == channels_out(cdims) DimensionMismatch("Kernel output channel count ($(w[M]) vs. $(channels_out(cdims)))")
     
     # Next, check that the spatial dimensions match up
     @assert x[1:M-2] == input_size(cdims) DimensionMismatch("Data input spatial size ($(x[1:M-2]) vs. $(input_size(cdims)))")

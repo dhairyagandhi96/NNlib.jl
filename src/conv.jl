@@ -86,6 +86,7 @@ for backend in (Symbol(), :_direct, :_im2col, :_nnpack)
             function $(Symbol("$(name)$(backend)"))(
                             x::AbstractArray{xT,N}, w::AbstractArray{wT,N},
                             cdims::ConvDims; kwargs...) where {xT, wT, N}
+                
                 y = similar(x, promote_type(xT, wT), output_size(cdims)...,
                                channels_out(cdims), size(x,N))
                 return $(Symbol("$(name)$(backend)!"))(y, x, w, cdims; kwargs...)
@@ -147,7 +148,7 @@ for front_name in (:conv, :∇conv_data, :∇conv_filter,
                                 y::AbstractArray{yT,$N}, x::AbstractArray{xT,$N},
                                 w::AbstractArray{wT,$N}, cdims::ConvDims;
                                 kwargs...) where {yT, xT, wT}
-
+                    # @show size(y)
                     $(Symbol("$(front_name)$(backend)!"))(
                         insert_singleton_spatial_dimension(y, $(5 - N)),
                         insert_singleton_spatial_dimension(x, $(5 - N)),
@@ -189,19 +190,26 @@ for (front_name, backend) in (
                         out::AbstractArray{T,5}, in1::AbstractArray{T,5},
                         in2::AbstractArray{T,5}, cdims::C; kwargs...) where {T <: $G, C <: ConvDims}
 
+            # @show size(out)
             x_cs = Iterators.partition(1:size(in1, 4),
                                        channels_in(cdims) ÷ groupcount(cdims))
             w_cs = Iterators.partition(1:size(in2, 5),
-                                       channels_out(cdims) ÷ groupcount(cdims))
+                                       channels_in(cdims) ÷ groupcount(cdims))
             cdims2 = basetype(C)(cdims,
                                  G = 1,
                                  C_in = channels_in(cdims) ÷ groupcount(cdims),
-                                 C_out = channels_out(cdims) ÷ groupcount(cdims))
-            
-            Threads.@sync for (xc, wc) in zip(x_cs, w_cs)
+                                 C_out = channels_out(cdims) ÷ groupcount(cdims) ÷ groupcount(cdims))
+
+            y_cs = Iterators.partition(1:(channels_out(cdims) ÷ groupcount(cdims)), channels_out(cdims) ÷ groupcount(cdims) ÷ groupcount(cdims))
+            # @show channels_out(cdims), channels_out(cdims2)
+            # @show size(in1), size(in2)
+            # @show groupcount(cdims)
+            # @show collect(x_cs), collect(w_cs), collect(y_cs)
+            Threads.@sync for (xc, wc, yc) in zip(x_cs, w_cs, y_cs)
                 x = @view in1[ntuple(i -> i == 4 ? xc : Colon(), 5)...]
-                w = @view in2[ntuple(i -> i == 5 ? wc : Colon(), 5)...]
-                y = @view out[ntuple(i -> i == 4 ? wc : Colon(), 5)...]
+                w = @view in2[ntuple(i -> i == 4 ? wc : Colon(), 5)...]
+                y = @view out[ntuple(i -> i == 4 ? yc : Colon(), 5)...]
+                # @show size(x), size(w), size(y)
                 Threads.@spawn $(Symbol("$(front_name)_$(backend)!"))(y, x, w, cdims2; kwargs...)
             end
 
